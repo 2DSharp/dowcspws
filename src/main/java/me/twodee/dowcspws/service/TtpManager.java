@@ -20,6 +20,7 @@ import java.security.Key;
 import java.security.PrivateKey;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.List;
 
 @AllArgsConstructor
 @Service
@@ -57,5 +58,9 @@ public class TtpManager {
     private PrivateKey getPrivateKey() throws IOException, URISyntaxException {
         var file = new File(getClass().getClassLoader().getResource("pws_ec.pem").toURI());
         return PemFile.readPrivateKey(file);
+    }
+
+    public List<TtpIdentity> getAvailablePwsList() {
+        return repository.findAll();
     }
 }

@@ -5,21 +5,26 @@ import lombok.Data;
 import lombok.Getter;
 import lombok.Setter;
 import me.twodee.dowcspws.Helper;
+import me.twodee.dowcspws.ResultObject;
 import me.twodee.dowcspws.model.dto.Ttp;
+import me.twodee.dowcspws.model.dto.User;
 import me.twodee.dowcspws.service.Accounts;
 import me.twodee.dowcspws.service.Transactions;
 import me.twodee.dowcspws.service.TtpManager;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 
+import javax.servlet.http.HttpSession;
 import javax.validation.Valid;
 import java.io.IOException;
 import java.net.URISyntaxException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 @Controller
 @AllArgsConstructor
@@ -28,6 +33,101 @@ public class GuiController {
     private final Accounts accounts;
     private final Transactions transactions;
     private final TtpManager manager;
+
+    @Autowired
+    public GuiController(Accounts accounts, TtpManager manager, Transactions transactions) {
+        this.accounts = accounts;
+        this.transactions = transactions;
+        this.manager = manager;
+    }
+
+    @GetMapping("/register")
+    public String register(Model formModel) {
+        formModel.addAttribute("title", "Create a new account");
+        return "register";
+    }
+
+    @PostMapping("/register")
+    public String register(@Valid User.RegistrationData data, BindingResult result, Model formModel) {
+
+        if (result.hasErrors()) {
+            formModel.addAttribute("error", result.getFieldErrors().get(0).getDefaultMessage());
+        } else {
+            ResultObject registrationResult = accounts.register(data);
+            if (registrationResult.isSuccessful) {
+                formModel.addAttribute("complete", true);
+            } else {
+                formModel.addAttribute("error", registrationResult.error);
+            }
+        }
+        Map<String, String> values = new HashMap<>();
+        Helper.addNotNull(values, "name", data.name);
+        Helper.addNotNull(values, "email", data.email);
+
+        formModel.addAttribute("values", values);
+        return register(formModel);
+    }
+
+    @GetMapping("/")
+    public String loginView(Model model, HttpSession session) {
+        model.addAttribute("title", "Login - DemoPWS");
+        session.setAttribute("csrf_token", UUID.randomUUID().toString());
+        model.addAttribute("csrf_token", session.getAttribute("csrf_token"));
+        return "login";
+    }
+
+    @GetMapping("/dashboard")
+    public String dashboard(Model model, HttpSession session) {
+
+        if (session.getAttribute("loggedIn") != null) {
+            model.addAttribute("title", "Dashboard - DemoPWS");
+            return "dashboard";
+        }
+        return "redirect:/";
+    }
+
+    @GetMapping("/connect/ttp")
+    public String ttpList(Model model, HttpSession session) {
+        if (session.getAttribute("loggedIn") != null) {
+
+            var ttps = manager.getAvailablePwsList();
+            model.addAttribute("title", "Connect a TTP to your account");
+            model.addAttribute("ttps", ttps);
+            return "ttp_list";
+        }
+        return "redirect:/";
+    }
+
+    @PostMapping("/")
+    public String login(@Valid User.LoginData data, BindingResult result, HttpSession session, Model model) {
+        try {
+            Map<String, String> values = new HashMap<>();
+            Helper.addNotNull(values, "name", data.identifier);
+            model.addAttribute("values", values);
+
+            if (result.hasErrors()) {
+                model.addAttribute("error", result.getFieldErrors().get(0).getDefaultMessage());
+                return loginView(model, session);
+            }
+
+            if (!session.getAttribute("csrf_token").equals(data.csrf)) {
+                model.addAttribute("error", "Invalid login request");
+                return loginView(model, session);
+            }
+
+            if (!accounts.hasCorrectCredentials(data)) {
+                model.addAttribute("error", "The credentials you supplied are invalid");
+                return loginView(model, session);
+            }
+
+            accounts.login(data.identifier);
+            return "redirect:/dashboard";
+
+        } catch (Throwable e) {
+            model.addAttribute("error", "Something went wrong");
+        }
+        return loginView(model, session);
+    }
 
 
     @GetMapping("/details")
@@ -47,7 +147,7 @@ public class GuiController {
     }
 
     @PostMapping("/register/ttp")
-    public String registerTtp(@Valid Ttp.Registration ttp, BindingResult result, Model model ) {
+    public String registerTtp(@Valid Ttp.Registration ttp, BindingResult result, Model model) {
         model.addAttribute("title", "Register a TTP");
         Map<String, String> values = new HashMap<>();
         Helper.addNotNull(values, "name", ttp.getName());
